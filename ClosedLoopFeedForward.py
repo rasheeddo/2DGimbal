@@ -285,28 +285,28 @@ def RawGyroCalibration():
     gyroX1 = []
     gyroY1 = []
     gyroZ1 = []
-    #gyroX2 = []
-    #gyroY2 = []
-    #gyroZ2 = []  
+    gyroX2 = []
+    gyroY2 = []
+    gyroZ2 = []  
     for i in range(0,500):
         rawGyro1 = getRawGyro1()
-        #rawGyro2 = getRawGyro2()
+        rawGyro2 = getRawGyro2()
         gyroX1.append(rawGyro1[0])
         gyroY1.append(rawGyro1[1])
         gyroZ1.append(rawGyro1[2])
-        #gyroX2.append(rawGyro2[0])
-        #gyroY2.append(rawGyro2[1])
-        #gyroZ2.append(rawGyro2[2])
+        gyroX2.append(rawGyro2[0])
+        gyroY2.append(rawGyro2[1])
+        gyroZ2.append(rawGyro2[2])
         time.sleep(0.01)
 
     ave_gyroX1 = sum(gyroX1)/len(gyroX1)
     ave_gyroY1 = sum(gyroY1)/len(gyroY1)
     ave_gyroZ1 = sum(gyroZ1)/len(gyroZ1)
-    #ave_gyroX2 = sum(gyroX2)/len(gyroX2)
-    #ave_gyroY2 = sum(gyroY2)/len(gyroY2)
-    #ave_gyroZ2 = sum(gyroZ2)/len(gyroZ2)
+    ave_gyroX2 = sum(gyroX2)/len(gyroX2)
+    ave_gyroY2 = sum(gyroY2)/len(gyroY2)
+    ave_gyroZ2 = sum(gyroZ2)/len(gyroZ2)
 
-    return ave_gyroX1, ave_gyroY1, ave_gyroZ1#, ave_gyroX2, ave_gyroY2, ave_gyroZ2
+    return ave_gyroX1, ave_gyroY1, ave_gyroZ1, ave_gyroX2, ave_gyroY2, ave_gyroZ2
 
 ####################################################### Set Servo Configuration #############################################################
 
@@ -352,8 +352,8 @@ DXL4_ID                      = 4
 DXL5_ID                      = 5
 DXL6_ID                      = 6
 
-BAUDRATE                    = 57600             # Dynamixel default baudrate : 57600
-DEVICENAME                  = '/dev/ttyUSB2'    # Check which port is being used on your controller
+BAUDRATE                    = 1000000             # Dynamixel default baudrate : 57600
+DEVICENAME                  = '/dev/ttyUSB0'    # Check which port is being used on your controller
 												# ex) Windows: "COM1"   Linux: "/dev/ttyUSB0" Mac: "/dev/tty.usbserial-*"
 TORQUE_ENABLE               = 1                 # Value for enabling the torque
 TORQUE_DISABLE              = 0                 # Value for disabling the torque
@@ -392,10 +392,10 @@ else:
 #SetProfile2(1000,500)
 
 ######################### Set PID Gain Position Loop  ##############################
-
+#SetPID1(1000,10,1000)
+#SetPID2(1000,10,1000)
 SetOperatingMode(POSITION_CONTROL)
-#SetPID1(500,1000,200)
-#SetPID2(500,1000,200)
+
 TorqueOn()
 
 GoHome12()
@@ -405,16 +405,16 @@ global GyroXcal1, GyroYcal1, GyroZcal1, GyroXcal2, GyroYcal2, GyroZcal2
 global kr, kp
 
 sensor1 = mpu6050(0x68)
-#sensor2 = mpu6050(0x69)
+sensor2 = mpu6050(0x69)
 
 gyroCal = RawGyroCalibration()
 
 GyroXcal1 = gyroCal[0]
 GyroYcal1 = gyroCal[1]
 GyroZcal1 = gyroCal[2]
-#GyroXcal2 = gyroCal[3]
-#GyroYcal2 = gyroCal[4]
-#GyroZcal2 = gyroCal[5]
+GyroXcal2 = gyroCal[3]
+GyroYcal2 = gyroCal[4]
+GyroZcal2 = gyroCal[5]
 
 
 ### Rasheed's method
@@ -427,31 +427,14 @@ pitch3=[]
 period = 0.02
 
 ### PID
-'''
-# For logiccol camera
-P = 5.0         #5.8
-I = 6.0         #2.5
-D = 0.06       #0.015
-'''
-# For DUO pro FLIR
-#P = 0.13         #5.8
-#I = 28.0         #2.5
-#D = 0.55       #0.015
+P = 5.5         #5.8
+I = 2.0         #2.5
+D = 0.01       #0.015
 
-#pid_pitch = PID(P, I, D, setpoint=0.0)
-#pid_roll = PID(P, I, D, setpoint=0.0)
-P_pitch = 1.48        
-I_pitch = 28.0         
-D_pitch = 0.05       
+pid_pitch = PID(P, I, D, setpoint=0.0)
+pid_roll = PID(P, I, D, setpoint=0.0)
 
-P_roll = 0.1      
-I_roll = 30.0        
-D_roll = 0.1       
-
-pid_pitch = PID(P_pitch, I_pitch, D_pitch, setpoint=0.0)
-pid_roll = PID(P_roll, I_roll, D_roll, setpoint=0.0)
-
-pid_pitch.sample_time = None
+pid_pitch.sample_time = 0.001
 pid_roll.sample_time = pid_pitch.sample_time
 
 pid_pitch.auto_mode = True
@@ -460,27 +443,37 @@ pid_roll.auto_mode = True
 pid_pitch.output_limits = (-50.0,50.0)
 pid_roll.output_limits = (-50.0,50.0)
 
+#v = controlled_system.update(0)
+
+K = 0.7
+
 while True:
 
     startTime = time.time()
 
 
     rollDegree1, pitchDegree1 = getIMU1(period)
-    #rollDegree2, pitchDegree2 = getIMU2(period)
- 
-    outputPIDroll = pid_roll(rollDegree1)
-    outputPIDpitch = pid_pitch(pitchDegree1)
+    rollDegree2, pitchDegree2 = getIMU2(period)
 
+    outputPIDroll = pid_roll(rollDegree2)
+    outputPIDpitch = pid_pitch(pitchDegree2)
 
-    ServoAng1 = 140 + outputPIDroll
-    ServoAng2 = 135 + outputPIDpitch
+    CompensateRoll = outputPIDroll*K + rollDegree1*(1-K)
+    CompensatePitch = outputPIDpitch*K + pitchDegree1*(1-K)
+
+    ServoAng1 = 140 + CompensateRoll
+    ServoAng2 = 135 + CompensatePitch
 
     RunServo(ServoAng1,ServoAng2) 
 
-    print("Roll: %f" %rollDegree1)
-    print("Pitch: %f" %pitchDegree1)
+    print("Roll1: %f" %rollDegree1)
+    print("Pitch1: %f" %pitchDegree1)
+    print("Roll2: %f" %rollDegree2)
+    print("Pitch2: %f" %pitchDegree2)
     print("OutputPIDroll: %f" %outputPIDroll)
     print("OutputPIDpitch: %f" %outputPIDpitch)
+    print("CompensateRoll: %f" %CompensateRoll)
+    print("CompensatePitch: %f" %CompensatePitch)
     print("ServoAng1: %f" %ServoAng1)
     print("ServoAng2: %f" %ServoAng2)
     endTime = time.time()

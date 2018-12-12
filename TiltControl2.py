@@ -2,6 +2,7 @@ import time
 from mpu6050 import mpu6050                      #new library for IMU
 import math
 from dynamixel_sdk import *                     # Uses Dynamixel SDK library
+from simple_pid import PID
 
 def RunServo(DEG1,DEG2):
     servo_ang1 = map(DEG1, 0.0, 360.0, 0, 4095)
@@ -433,7 +434,7 @@ DXL6_ID                      = 6
 
 
 
-BAUDRATE                    = 57600            # Dynamixel default baudrate : 57600
+BAUDRATE                    = 1000000            # Dynamixel default baudrate : 57600
 DEVICENAME                  = '/dev/ttyUSB0'    # Check which port is being used on your controller
                                                 # ex) Windows: "COM1"   Linux: "/dev/ttyUSB0" Mac: "/dev/tty.usbserial-*"
 TORQUE_ENABLE               = 1                 # Value for enabling the torque
@@ -478,15 +479,14 @@ SetProfile1(2000,0)
 SetProfile2(2000,0)
 time.sleep(0.5)
 ######################### Set PID Gain Position Loop  ##############################
-#SetPID1(800,0,500)
+SetPID1(800,0,3000)
 time.sleep(0.5)
-#SetPID2(800,0,500)
+SetPID2(800,0,3000)
 #SetFFGain1(0,0)
 #SetFFGain2(0,0)
 time.sleep(0.5)
 #################################\##########################
 ser = serial.Serial('/dev/ttyACM0',9600)
-ser.flushInput()
 
 s = []
 data=[]
@@ -547,7 +547,31 @@ last_pitch = 0
 
 normal_roll = 140
 normal_pitch = 135
+
+rollDegree = 0
+pitchDegree = 0
 #P_offset,R_offset = FindOffsetAngle()
+### PID
+P = 0.13         
+I = 28.0         
+D = 0.55       
+
+pid_pitch = PID(P, I, D, setpoint=0.0)
+pid_roll = PID(P, I, D, setpoint=0.0)
+
+pid_pitch.sample_time = 0.001
+pid_roll.sample_time = pid_pitch.sample_time
+
+pid_pitch.auto_mode = True
+pid_roll.auto_mode = True
+
+pid_pitch.output_limits = (-100.0,100.0)
+pid_roll.output_limits = (-100.0,100.0)
+
+outputPIDroll = 0
+outputPIDpitch = 0
+OnceTrig = False
+new_pitch = 0
 
 while True:
 
@@ -585,20 +609,36 @@ while True:
 
     ## Only stabilizer mode
     if switch < 1200:
+        if not OnceTrig:
+            OnceTrig = True
+            pid_pitch.setpoint = 0
+
         rollDegree, pitchDegree = getIMU3(period)
-        ServoAng1 = normal_roll - rollDegree 
-        ServoAng2 = normal_pitch - pitchDegree
+        #if abs(rollDegree) > 1.0:
+        outputPIDroll = pid_roll(rollDegree)
+        #if abs(pitchDegree) > 1.0:
+        outputPIDpitch = pid_pitch(pitchDegree)
+        ServoAng1 = normal_roll + outputPIDroll
+        ServoAng2 = normal_pitch + outputPIDpitch 
     ## Tilt manual control
     elif switch > 1400 and switch < 1550:
         ServoAng1 = normal_roll 
-        ServoAng2 = normal_pitch + (80*control_ang)
+        ServoAng2 = normal_pitch + (70*control_ang)
         # Set new pitch angle
-        new_pitch = normal_pitch + (80*control_ang)
+        new_pitch = 70*control_ang
+        OnceTrig = True
     ## Use new pitch angle on stabilize mode
     elif switch > 1800:
+        if OnceTrig:
+            OnceTrig = False
+            pid_pitch.setpoint = new_pitch
+            time.sleep(1)
+
         rollDegree, pitchDegree = getIMU3(period)
-        ServoAng1 = normal_roll - rollDegree 
-        ServoAng2 = new_pitch - pitchDegree
+        outputPIDroll = pid_roll(rollDegree)
+        outputPIDpitch = pid_pitch(pitchDegree)
+        ServoAng1 = normal_roll + outputPIDroll 
+        ServoAng2 = normal_pitch + outputPIDpitch
 
 
     #rollDegree, pitchDegree = getIMU3(period)
@@ -617,8 +657,8 @@ while True:
     #last_roll = rollDegree
     #last_pitch = pitchDegree
 
-    #print("Pitch: %f" %pitchDegree)
-    #print("Roll: %f" %rollDegree)
+    print("Roll: %f" %rollDegree)
+    print("Pitch: %f" %pitchDegree)
     print("ServoAng1: %f" %ServoAng1)
     print("ServoAng2: %f" %ServoAng2)
     print("Control Ang: %f" %control_ang)

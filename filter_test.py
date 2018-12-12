@@ -1,33 +1,12 @@
 #Script for testing filtering on the MPU data:
 
 from mpu6050 import mpu6050
-import math as m
+import math 
 import numpy as np
 import time
 from dronekit import connect, VehicleMode
 
 sensor = mpu6050(0x68)
-
-rawXoffset=0
-rawYoffset=0
-rawZoffset=0
-rawXpoffset=0
-rawYpoffset=0
-rawZpoffset=0
-
-Dt=0.02 #intervalle of time between update
-init=1
-k_r=0.984 #arbitrary value (see sources)
-k_p=0.96
-k = k_r
-initAcq=1
-
-avPitch=[]
-avRoll=[]
-avYaw=[]
-Kpitch=0
-Kroll=0
-Kyaw=0
 
 def getIMUAngle():
         global init,Kpitch,Kroll,Kyaw
@@ -65,6 +44,39 @@ def getIMUAngle():
         Kyaw=k*yawG+(1-k)*yawA
 
         return Kpitch,Kroll,Kyaw
+
+def getIMU3():
+    global init3, pitch_out, roll_out
+    Dt=0.02
+    acc_data = sensor.get_accel_data()
+    gyro_data=sensor.get_gyro_data()
+
+    accX=acc_data["x"]
+    accY=acc_data["y"]
+    accZ=acc_data["z"]
+    gyroX=gyro_data["x"] - GyroXcal
+    gyroY=gyro_data["y"] - GyroYcal
+    gyroZ=gyro_data["z"] - GyroZcal
+
+
+    #Angle calculation by axelerometer
+    roll_acc = math.degrees(math.atan(accY/math.sqrt(math.pow(accX,2)+math.pow(accZ,2))))
+    pitch_acc = math.degrees(math.atan(-accX/math.sqrt(math.pow(accY,2)+math.pow(accZ,2))))
+    #yawA=m.degrees((m.atan(m.sqrt(m.pow(accX,2)+m.pow(accY,2)),rawZ)))
+    
+    if (init3):
+        roll_gyro = roll_acc
+        pitch_gyro = pitch_acc
+        init3 = 0
+    else:
+        roll_gyro = Dt*gyroX + roll_out
+        pitch_gyro = Dt*gyroY + pitch_out
+    
+
+    roll_out = kr*roll_gyro + (1-kr)*roll_acc
+    pitch_out = kp*pitch_gyro + (1-kp)*pitch_acc
+
+    return roll_out, pitch_out
 
 def calibrationOffset():
     print("Start calibration....")
@@ -105,24 +117,31 @@ def smoother(n,rawPitch,rawRoll,rawYaw):
                 
         return int(sum(avPitch)/len(avPitch)),int(sum(avRoll)/len(avRoll)),int(sum(avYaw)/len(avYaw))
 
+def getRawGyro():
+    giroscope_data=sensor.get_gyro_data()
+    rawXp=giroscope_data["x"]
+    rawYp=giroscope_data["y"]
+    rawZp=giroscope_data["z"]
+    return rawXp, rawYp, rawZp
 
-def FindOffsetAngle():
-    print("Keep it steady...")
-    P = []
-    R = []
-    for i in range(0,1000):
-        PRY = getIMUAngle()
-        P.append(PRY[0])
-        R.append(PRY[1])
+def RawGyroCalibration():
+    print("Doing gyro calibration...(Keep stable!)")
+    gyroX = []
+    gyroY = []
+    gyroZ = [] 
+    for i in range(0,500):
+        rawGyro = getRawGyro()
+        gyroX.append(rawGyro[0])
+        gyroY.append(rawGyro[1])
+        gyroZ.append(rawGyro[2])
+        time.sleep(0.01)
 
-    ave_pitch = sum(P)/len(P)
-    ave_roll = sum(R)/len(R)
+    ave_gyroX = sum(gyroX)/len(gyroX)
+    ave_gyroY = sum(gyroY)/len(gyroY)
+    ave_gyroZ = sum(gyroZ)/len(gyroZ)
 
-    return ave_pitch, ave_roll
+    return ave_gyroX, ave_gyroY, ave_gyroZ
 
-
-X_offset,Y_offset,Z_offset=calibrationOffset()
-pitch_offset, roll_offset = FindOffsetAngle()
                    
 pitch = []
 roll = []
@@ -138,24 +157,41 @@ rawYaw = []
 rawYp = []
 print("Get signal...")
 
-#vehicle = connect('/dev/serial/by-id/usb-3D_Robotics_PX4_FMU_v2.x_0-if00', wait_ready=True, baud=9600 ) 
+gyroCal = RawGyroCalibration()
+global GyroXcal, GyroYcal, GyroZcal
+GyroXcal = gyroCal[0]
+GyroYcal = gyroCal[1]
+GyroZcal = gyroCal[2]
+
+
+### Rasheed's method
+init3 = 1
+Dt = 0.02
+global kr, kp
+kr = 0.99
+kp = 0.99
+roll3= []
+pitch3=[]
+
+vehicle = connect('/dev/serial/by-id/usb-3D_Robotics_PX4_FMU_v2.x_0-if00', wait_ready=True, baud=9600 ) 
 print("Start shaking!")
-acqui=1000
+acqui=500
 for n in range(0,acqui):
 
-        full=getIMUAngle()
-        pitch2.append(full[0]-pitch_offset)
-        roll2.append(full[1]-roll_offset)
-        #Roll = (vehicle.attitude.roll*180.0/m.pi-0.0)
-        #Pitch = (vehicle.attitude.pitch*180.0/m.pi-0.0)
-        #pitch.append(Pitch)
-        #roll.append(Roll)
-        yaw.append(full[2]+Z_offset)
+        Roll = (vehicle.attitude.roll*180.0/math.pi-0.0)
+        Pitch = (vehicle.attitude.pitch*180.0/math.pi-0.0)
+        pitch.append(Pitch)
+        roll.append(Roll)
+
+        full=getIMU3()
+        roll2.append(full[0])
+        pitch2.append(full[1])
+        #yaw.append(full[2]+Z_offset)
         
-        smfull=smoother(3,pitch2[n],roll2[n],yaw[n])
+        #smfull=smoother(3,pitch2[n],roll2[n],yaw[n])
         
-        smPitch.append(smfull[0])
-        smRoll.append(smfull[1])
+        #smPitch.append(smfull[0])
+        #smRoll.append(smfull[1])
         #smYaw.append(smfull[2])
 
 
@@ -175,22 +211,23 @@ t=np.arange(0,acqui,1)
 
 plt.figure(1)
 
-plt.subplot(3, 1, 1)
-#plt.plot(t,pitch,'r',t,smPitch,'b')
-plt.plot(t,pitch2,'b',t,smPitch)
+plt.subplot(2, 1, 1)
+plt.plot(t,pitch,'r')
+plt.plot(t,pitch2,'b')
 plt.grid()
 plt.title("Pitch")
 
-plt.subplot(3, 1, 2)
-#plt.plot(t,roll,'r',t,smRoll,'b')
-plt.plot(t,roll2,'b',t,smRoll)
+plt.subplot(2, 1, 2)
+plt.plot(t,roll,'r')
+plt.plot(t,roll2,'b')
 plt.grid()
 plt.title("Roll")
 
+'''
 plt.subplot(3,1,3)
 plt.plot(t,rawYp,'r',t,rawXp,'b')
 plt.grid()
-
+'''
 
 plt.legend()
 plt.show()

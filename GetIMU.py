@@ -2,9 +2,8 @@ from dronekit import connect, VehicleMode
 import math
 import time
 
-vehicle = connect('/dev/serial/by-id/usb-3D_Robotics_PX4_FMU_v2.x_0-if00', wait_ready=True, baud=115200)
-Buff_P = list()
-Buff_R = list()
+vehicle = connect('/dev/serial/by-id/usb-3D_Robotics_PX4_FMU_v2.x_0-if00', wait_ready=True, baud=9600)
+
 while True:
 
 
